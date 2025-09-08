@@ -1,0 +1,1157 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>機材予約システム v7.3 (最終完成版)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- PDF出力ライブラリ -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .view { display: none; }
+        .view.active { display: block; }
+        /* スクロールバー */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #a8a8a8; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #555; }
+        
+        /* モーダル */
+        .modal-backdrop { background-color: rgba(0, 0, 0, 0.5); }
+        
+        /* カレンダー */
+        .calendar-day { transition: all 0.2s ease; }
+        .calendar-day:not(.disabled):hover { background-color: #dbeafe; border-radius: 50%; }
+        .calendar-day.selected { background-color: #3b82f6 !important; color: white !important; border-radius: 50%; }
+        .calendar-day.disabled { color: #d1d5db; cursor: not-allowed; }
+        .calendar-day.today { font-weight: bold; border: 1px solid #9ca3af; border-radius: 50%; }
+        
+        /* ツールチップ */
+        .tooltip-container { position: relative; display: inline-block; }
+        .tooltip-container .tooltip-text {
+            visibility: hidden; width: max-content; max-width: 250px;
+            background-color: #334155; color: #fff; text-align: left;
+            border-radius: 6px; padding: 8px 12px; position: absolute;
+            z-index: 50; bottom: 110%; left: 50%;
+            transform: translateX(-50%); opacity: 0; transition: opacity 0.3s;
+            font-size: 0.875rem; line-height: 1.25rem; pointer-events: none;
+            white-space: pre-wrap;
+        }
+        .tooltip-container:hover .tooltip-text { visibility: visible; opacity: 1; }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+
+    <!-- ヘッダー -->
+    <header class="bg-white shadow-md sticky top-0 z-40">
+        <nav class="container mx-auto px-4 sm:px-6 py-3 flex justify-between items-center">
+            <h1 class="text-xl sm:text-2xl font-bold text-gray-800">機材予約システム v7.3</h1>
+            
+            <!-- デスクトップメニュー -->
+            <div class="hidden md:flex items-center space-x-4">
+                <button id="nav-booking" class="nav-btn text-blue-600 border-b-2 border-blue-600 font-medium px-2 py-1">機材を予約</button>
+                <button id="nav-status" class="nav-btn text-gray-600 hover:text-blue-600 font-medium px-2 py-1">他チームの予約状況</button>
+                <button id="nav-management" class="nav-btn text-gray-600 hover:text-blue-600 font-medium px-2 py-1">予約/返却管理</button>
+                <button id="refresh-data-btn" class="text-gray-500 hover:text-blue-600 transition" title="最新の情報に更新">
+                    <svg class="w-6 h-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0011.664 0l3.18-3.185m-3.181-4.992l-3.182-3.182a8.25 8.25 0 00-11.664 0l-3.18 3.185" /></svg>
+                </button>
+                <button id="nav-cart" class="relative text-gray-600 hover:text-blue-600">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13 5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4z"/></svg>
+                    <span id="cart-count" class="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">0</span>
+                </button>
+            </div>
+            
+            <div id="auth-container" class="hidden md:flex items-center">
+                <span id="user-name" class="hidden text-sm text-gray-700 mr-4"></span>
+                <button id="authorize_button" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition">サインイン</button>
+                <button id="signout_button" class="hidden bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-lg">サインアウト</button>
+            </div>
+
+            <!-- ハンバーガーメニューボタン -->
+            <div class="md:hidden flex items-center">
+                 <button id="mobile-cart-btn" class="relative text-gray-600 hover:text-blue-600 mr-4">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13 5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4z"/></svg>
+                    <span id="mobile-cart-count" class="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">0</span>
+                </button>
+                <button id="hamburger-btn" class="text-gray-600 focus:outline-none">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+                </button>
+            </div>
+        </nav>
+        
+        <!-- モバイルメニュー -->
+        <div id="mobile-menu" class="hidden md:hidden bg-white shadow-md">
+            <div class="px-2 pt-2 pb-3 space-y-1 sm:px-3">
+                <a href="#" id="mobile-nav-booking" class="mobile-nav-btn block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-50">機材を予約</a>
+                <a href="#" id="mobile-nav-status" class="mobile-nav-btn block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-50">他チームの予約状況</a>
+                <a href="#" id="mobile-nav-management" class="mobile-nav-btn block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-50">予約/返却管理</a>
+                <a href="#" id="mobile-refresh-data-btn" class="mobile-nav-btn block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-50">最新の情報に更新</a>
+            </div>
+            <div id="mobile-auth-container" class="px-4 py-3 border-t">
+                <span id="mobile-user-name" class="hidden text-sm text-gray-700 mb-2"></span>
+                <button id="mobile-authorize_button" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition">サインイン</button>
+                <button id="mobile-signout_button" class="hidden w-full bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-lg">サインアウト</button>
+            </div>
+        </div>
+    </header>
+
+    <main class="container mx-auto p-4 sm:p-6">
+        <div id="loader" class="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center z-50">
+            <div class="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-blue-500"></div>
+            <p class="text-white text-lg ml-4">データを読み込んでいます...</p>
+        </div>
+        <div id="message-box" class="hidden fixed top-20 right-5 bg-green-500 text-white py-2 px-4 rounded-lg shadow-lg z-50"></div>
+
+        <!-- 予約ビュー -->
+        <div id="booking-view" class="view">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <div class="lg:col-span-1 bg-white p-6 rounded-lg shadow-md h-fit">
+                    <h2 class="text-2xl font-bold mb-2">1. 日付を選択</h2>
+                    <div class="flex justify-between items-center my-4">
+                        <button id="calendar-prev" class="px-3 py-1 bg-gray-200 rounded-md hover:bg-gray-300">&lt;</button>
+                        <h4 id="calendar-month-year" class="text-lg font-semibold"></h4>
+                        <button id="calendar-next" class="px-3 py-1 bg-gray-200 rounded-md hover:bg-gray-300">&gt;</button>
+                    </div>
+                    <div class="grid grid-cols-7 gap-1 text-center text-sm font-semibold text-gray-500 mb-2">
+                        <span>日</span><span>月</span><span>火</span><span>水</span><span>木</span><span>金</span><span>土</span>
+                    </div>
+                    <div id="calendar-grid" class="grid grid-cols-7 gap-1 text-center"></div>
+                </div>
+                <div class="lg:col-span-2">
+                    <h2 class="text-2xl font-bold mb-2">2. 機材を選択</h2>
+                    <p id="selected-period-display" class="text-gray-600 mb-4">カレンダーから日付を選択してください</p>
+                    <div id="category-tabs-container" class="mb-4"></div>
+                    <div id="available-list" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 max-h-[65vh] overflow-y-auto p-2">
+                         <p class="col-span-full text-center text-gray-500 pt-10">日付を選択すると、予約可能な機材が表示されます。</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 他チームの予約状況ビュー -->
+        <div id="status-view" class="view">
+             <div class="flex flex-wrap justify-between items-center mb-6 gap-4">
+                <h2 class="text-3xl font-bold">他チームの予約状況</h2>
+                <div class="flex items-center gap-2">
+                    <button id="status-prev" class="p-2 rounded-md bg-white shadow hover:bg-gray-100">&lt; 前日</button>
+                    <input type="date" id="status-datepicker" class="p-2 border rounded-md shadow-sm">
+                    <button id="status-next" class="p-2 rounded-md bg-white shadow hover:bg-gray-100">翌日 &gt;</button>
+                </div>
+            </div>
+            <div id="status-list" class="bg-white p-4 sm:p-6 rounded-lg shadow-md overflow-x-auto"></div>
+        </div>
+
+        <!-- 予約/返却管理ビュー -->
+        <div id="management-view" class="view">
+            <div class="flex flex-wrap justify-between items-center mb-6 gap-4">
+                <h2 class="text-3xl font-bold">予約/返却管理</h2>
+                 <div class="flex items-center gap-2">
+                    <button id="management-prev" class="p-2 rounded-md bg-white shadow hover:bg-gray-100">&lt; 前日</button>
+                    <input type="date" id="management-datepicker" class="p-2 border rounded-md shadow-sm">
+                    <button id="management-next" class="p-2 rounded-md bg-white shadow hover:bg-gray-100">翌日 &gt;</button>
+                </div>
+            </div>
+            <div id="reservation-management-list" class="space-y-8"></div>
+        </div>
+    </main>
+
+    <!-- カートモーダル -->
+    <div id="cart-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center modal-backdrop">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+            <div class="p-6 border-b">
+                <h3 class="text-2xl font-bold">予約カート</h3>
+                <p class="text-gray-600">予約期間: <span id="cart-period-display" class="font-medium"></span></p>
+            </div>
+            <div id="cart-items" class="p-6 overflow-y-auto flex-grow bg-gray-50"></div>
+            <div class="p-6 border-t">
+                 <h4 class="text-xl font-semibold mb-4">予約情報</h4>
+                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                     <div>
+                        <label for="team-name" class="block text-sm font-medium text-gray-700">チーム名</label>
+                        <input type="text" id="team-name" class="mt-1 block w-full p-2 border rounded-md">
+                    </div>
+                    <div id="members-container" class="space-y-2 md:col-span-2"></div>
+                 </div>
+            </div>
+            <div class="p-6 bg-gray-100 flex justify-end gap-4">
+                <button id="cart-close-btn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-6 rounded-lg">閉じる</button>
+                <button id="cart-submit-btn" class="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-6 rounded-lg">この内容で予約する</button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+
+        // --- 設定項目 ---
+        const CLIENT_ID = '425919223393-tikip3khbdlf76nhmhr5bvooorla4ko2.apps.googleusercontent.com'; // あなたのクライアントID
+        const SPREADSHEET_ID = '1BTXqHi5_dq7LkSQ4ZmUUWW_SmFvXHIoSQIUaVaGjaMo'; // あなたのスプレッドシートID
+        
+        const DISCOVERY_DOCS = [
+            "https://sheets.googleapis.com/$discovery/rest?version=v4",
+            "https://www.googleapis.com/discovery/v1/apis/oauth2/v2/rest"
+        ];
+        const SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/userinfo.profile';
+
+        // --- グローバル変数 ---
+        let tokenClient;
+        let gapiInited = false, gisInited = false;
+        let equipmentData = [], equipmentSets = {}, fullReservationData = [], originalReservationData = [], memberData = {};
+        let cart = {};
+        
+        let selectedDates = [];
+        let calendarDate = new Date();
+        let statusViewDate = new Date();
+        let managementViewDate = new Date();
+        let pollingInterval = null;
+
+        // --- DOM要素 ---
+        const loader = document.getElementById('loader');
+        const views = document.querySelectorAll('.view');
+        const navButtons = document.querySelectorAll('.nav-btn');
+
+        // --- 初期化フロー ---
+        function gapiLoaded() { gapi.load('client', initializeGapiClient); }
+        async function initializeGapiClient() {
+            await gapi.client.init({ discoveryDocs: DISCOVERY_DOCS });
+            gapiInited = true; maybeEnableButtons();
+        }
+        function gisLoaded() {
+            const storedToken = localStorage.getItem('gapi_token');
+            tokenClient = google.accounts.oauth2.initTokenClient({
+                client_id: CLIENT_ID, scope: SCOPES,
+                callback: (tokenResponse) => {
+                    if (tokenResponse.error) {
+                       localStorage.removeItem('gapi_token');
+                       updateUI(false);
+                       throw tokenResponse;
+                    }
+                    localStorage.setItem('gapi_token', JSON.stringify(tokenResponse));
+                    gapi.client.setToken(tokenResponse);
+                    updateUI(true);
+                },
+            });
+            gisInited = true;
+            if (storedToken) {
+                gapi.client.setToken(JSON.parse(storedToken));
+                updateUI(true);
+            } else {
+                maybeEnableButtons();
+            }
+        }
+        function maybeEnableButtons() {
+            if (gapiInited && gisInited) {
+                document.getElementById('authorize_button').style.display = 'block';
+                document.getElementById('mobile-authorize_button').style.display = 'block';
+                loader.style.display = 'none'; 
+            }
+        }
+        
+        // --- 認証関連 ---
+        async function updateUI(isAuthorized) {
+            document.getElementById('authorize_button').style.display = isAuthorized ? 'none' : 'block';
+            document.getElementById('signout_button').style.display = isAuthorized ? 'block' : 'none';
+            document.getElementById('mobile-authorize_button').style.display = isAuthorized ? 'none' : 'block';
+            document.getElementById('mobile-signout_button').style.display = isAuthorized ? 'block' : 'none';
+
+             if (isAuthorized) {
+                await getUserProfile();
+                await loadAllData(false);
+                switchView('booking-view');
+                if (pollingInterval) clearInterval(pollingInterval);
+                pollingInterval = setInterval(() => loadAllData(true), 30000);
+             } else {
+                document.getElementById('user-name').classList.add('hidden');
+                document.getElementById('mobile-user-name').classList.add('hidden');
+                views.forEach(view => view.classList.remove('active'));
+                document.getElementById('booking-view').classList.add('active');
+                if (pollingInterval) clearInterval(pollingInterval);
+                loader.style.display = 'none';
+             }
+        }
+        
+        function handleAuthClick() {
+            if (gapi.client.getToken() === null) {
+                tokenClient.requestAccessToken({ prompt: 'consent' });
+            } else {
+                tokenClient.requestAccessToken({ prompt: '' });
+            }
+        }
+        function handleSignoutClick() {
+            const token = gapi.client.getToken();
+            if (token !== null) {
+                google.accounts.oauth2.revoke(token.access_token, () => {
+                    gapi.client.setToken('');
+                    localStorage.removeItem('gapi_token');
+                    updateUI(false);
+                    showMessage('サインアウトしました', 'info');
+                });
+            }
+        }
+        async function getUserProfile() {
+            try {
+                const response = await gapi.client.oauth2.userinfo.get();
+                const userName = `ようこそ, ${response.result.name} さん`;
+                document.getElementById('user-name').textContent = userName;
+                document.getElementById('user-name').classList.remove('hidden');
+                document.getElementById('mobile-user-name').textContent = userName;
+                document.getElementById('mobile-user-name').classList.remove('hidden');
+            } catch (err) {
+                console.error("Error getting user profile", err);
+                handleSignoutClick();
+            }
+        }
+
+        // --- データ処理 ---
+        async function loadAllData(isBackground = false) {
+            if (!isBackground) showLoader(true);
+            try {
+                if (gapi.client.getToken() === null) {
+                    handleSignoutClick();
+                    if (!isBackground) showMessage('セッションが切れました。再度サインインしてください。', 'error');
+                    return;
+                }
+
+                const oldDataString = JSON.stringify({originalReservationData, equipmentData, memberData, equipmentSets});
+
+                const responses = await gapi.client.sheets.spreadsheets.values.batchGet({
+                    spreadsheetId: SPREADSHEET_ID,
+                    ranges: ['機材リスト!A2:F', '予約リスト!A2:I', 'メンバーリスト!A2:B', '機材セット一覧!A2:C'],
+                });
+                
+                const valueRanges = responses.result.valueRanges;
+                if (!valueRanges || valueRanges.length < 4) throw new Error("必要なシート(機材セット一覧を含む)が見つかりません。");
+
+                const equipValues = valueRanges[0].values || [];
+                equipmentData = equipValues.map(row => ({
+                    id: row[0], name: row[1], category: row[2],
+                    totalStock: parseInt(row[3], 10), imageUrl: row[4], specs: row[5],
+                })).filter(item => item.id && item.name);
+
+                const resValues = valueRanges[1].values || [];
+                originalReservationData = resValues.map((row, index) => ({
+                    reservationId: row[0], teamName: row[1], equipmentId: row[2], 
+                    equipmentName: row[3], quantity: parseInt(row[4], 10) || 1, 
+                    startDate: row[5], endDate: row[6], status: row[7], 
+                    members: row[8], rowNum: index + 2,
+                }));
+                
+                fullReservationData = originalReservationData.flatMap(res => {
+                    if (!res.startDate || !res.endDate) return [];
+                    const dates = [];
+                    const start = parseDateAsLocal(res.startDate);
+                    const end = parseDateAsLocal(res.endDate);
+                    
+                    let currentDate = new Date(start);
+                    while(currentDate <= end) {
+                        dates.push({ ...res, date: toYYYYMMDD(new Date(currentDate)) });
+                        currentDate.setDate(currentDate.getDate() + 1);
+                    }
+                    return dates;
+                });
+
+                const memberValues = valueRanges[2].values || [];
+                memberData = memberValues.reduce((acc, row) => {
+                    const [role, name] = row;
+                    if (!role || !name) return acc;
+                    if (!acc[role]) acc[role] = [];
+                    acc[role].push(name);
+                    return acc;
+                }, {});
+
+                const setValues = valueRanges[3].values || [];
+                equipmentSets = setValues.reduce((acc, row) => {
+                    const [setId, equipmentId, quantity] = row;
+                    if (!setId || !equipmentId) return acc;
+                    if (!acc[setId]) acc[setId] = [];
+                    acc[setId].push({ equipmentId, quantity: parseInt(quantity, 10) || 1 });
+                    return acc;
+                }, {});
+                
+                const newDataString = JSON.stringify({originalReservationData, equipmentData, memberData, equipmentSets});
+                
+                if (oldDataString !== newDataString || !isBackground) {
+                    const activeView = document.querySelector('.view.active');
+                    renderCalendar(calendarDate.getFullYear(), calendarDate.getMonth());
+                    if(activeView) {
+                        switch (activeView.id) {
+                            case 'booking-view': displayAvailableEquipment(); break;
+                            case 'status-view': renderStatusForDate(); break;
+                            case 'management-view': displayReservationManagement(); break;
+                        }
+                    }
+                    if (isBackground) showMessage('データが更新されました', 'info');
+                }
+            } catch (err) {
+                console.error('データ取得エラー:', err);
+                 if (err.result && (err.result.error.code === 401 || err.result.error.code === 403)) {
+                    showMessage('認証の有効期限が切れました。再度サインインしてください。', 'error');
+                    handleSignoutClick();
+                } else {
+                    showMessage(`データの取得に失敗しました: ${err.message}`, 'error');
+                }
+            } finally {
+                 if (!isBackground) showLoader(false);
+            }
+        }
+        
+        // --- 予約ビュー関連 ---
+        function renderCalendar(year, month) {
+            const grid = document.getElementById('calendar-grid');
+            document.getElementById('calendar-month-year').textContent = `${year}年 ${month + 1}月`;
+            grid.innerHTML = '';
+
+            const firstDay = new Date(year, month, 1).getDay();
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            const today = toYYYYMMDD(new Date());
+
+            for (let i = 0; i < firstDay; i++) grid.appendChild(document.createElement('div'));
+
+            for (let i = 1; i <= daysInMonth; i++) {
+                const dayEl = document.createElement('div');
+                dayEl.textContent = i;
+                dayEl.className = 'calendar-day p-2 cursor-pointer';
+                const dateStr = toYYYYMMDD(new Date(year, month, i));
+                dayEl.dataset.date = dateStr;
+
+                if (dateStr < today) dayEl.classList.add('disabled');
+                if (dateStr === today) dayEl.classList.add('today');
+                if (selectedDates.includes(dateStr)) dayEl.classList.add('selected');
+                grid.appendChild(dayEl);
+            }
+        }
+        
+        function handleDayClick(e) {
+            const target = e.target;
+            if (!target.classList.contains('calendar-day') || target.classList.contains('disabled')) return;
+            
+            const date = target.dataset.date;
+            const index = selectedDates.indexOf(date);
+            if (index > -1) selectedDates.splice(index, 1);
+            else selectedDates.push(date);
+            
+            selectedDates.sort();
+            document.querySelectorAll('.calendar-day').forEach(d => {
+                d.classList.toggle('selected', selectedDates.includes(d.dataset.date));
+            });
+            displayAvailableEquipment();
+        }
+
+        function displayAvailableEquipment() {
+            const listEl = document.getElementById('available-list');
+            const periodEl = document.getElementById('selected-period-display');
+            listEl.innerHTML = '';
+            
+            if (selectedDates.length === 0) {
+                periodEl.textContent = 'カレンダーから日付を選択してください';
+                listEl.innerHTML = `<p class="col-span-full text-center text-gray-500 pt-10">日付を選択すると、予約可能な機材が表示されます。</p>`;
+                document.getElementById('category-tabs-container').innerHTML = '';
+                return;
+            }
+            periodEl.textContent = `選択中の期間: ${selectedDates.join(', ')}`;
+            
+            const activeReservations = fullReservationData.filter(r => r.status === '予約中');
+            
+            const allEquipmentWithStock = equipmentData.map(item => {
+                let minAvailableStock = item.totalStock;
+                let bookingTeams = new Set();
+                let unavailableSetItems = new Set();
+                
+                selectedDates.forEach(date => {
+                    const reservedCountOnDate = activeReservations
+                        .filter(r => r.equipmentId === item.id && r.date === date)
+                        .reduce((sum, r) => sum + r.quantity, 0);
+                    
+                    const availableOnDate = item.totalStock - reservedCountOnDate;
+                    if (availableOnDate < minAvailableStock) minAvailableStock = availableOnDate;
+
+                    if (item.category === '機材セット' && equipmentSets[item.id]) {
+                        equipmentSets[item.id].forEach(setItem => {
+                            const setItemReserved = activeReservations
+                                .filter(r => r.equipmentId === setItem.equipmentId && r.date === date)
+                                .reduce((sum, r) => sum + r.quantity, 0);
+                            const setItemInfo = equipmentData.find(e => e.id === setItem.equipmentId);
+                            if (setItemInfo && (setItemInfo.totalStock - setItemReserved) < setItem.quantity) {
+                                unavailableSetItems.add(setItemInfo.name);
+                            }
+                        });
+                    } else if (availableOnDate < item.totalStock) {
+                         activeReservations
+                            .filter(r => r.equipmentId === item.id && r.date === date)
+                            .forEach(r => bookingTeams.add(r.teamName));
+                    }
+                });
+
+                return { ...item, availableStock: minAvailableStock, bookingTeams: Array.from(bookingTeams), unavailableSetItems: Array.from(unavailableSetItems) };
+            });
+
+            displayCategoryTabs(allEquipmentWithStock);
+            const activeCategory = document.querySelector('.category-tab.bg-blue-500')?.dataset.category || 'すべて';
+
+            const filteredEquipment = allEquipmentWithStock.filter(item => 
+                activeCategory === 'すべて' || item.category === activeCategory
+            );
+
+            if (filteredEquipment.length === 0) {
+                listEl.innerHTML = '<p class="col-span-full text-center text-gray-500">該当する機材がありません。</p>';
+                return;
+            }
+
+            filteredEquipment.forEach(item => {
+                const card = document.createElement('div');
+                const isOutOfStock = (item.category === '機材セット') ? item.unavailableSetItems.length > 0 : item.availableStock <= 0;
+                
+                card.className = `bg-white rounded-lg shadow-md overflow-hidden flex flex-col ${isOutOfStock ? 'opacity-50' : ''}`;
+                
+                let buttonHtml = '';
+                if (isOutOfStock) {
+                    let teamList = '在庫がありません';
+                    if (item.category === '機材セット') {
+                         teamList = `セット内在庫不足: ${item.unavailableSetItems.join(', ')}`;
+                    } else if (item.bookingTeams.length > 0) {
+                         teamList = `予約中: ${item.bookingTeams.join(', ')}`;
+                    }
+
+                    buttonHtml = `<div class="tooltip-container mt-auto">
+                        <button disabled class="w-full bg-gray-400 text-white font-bold py-2 px-4 rounded-lg cursor-not-allowed">在庫なし</button>
+                        <span class="tooltip-text">${teamList}</span>
+                    </div>`;
+                } else if (item.category === '機材セット') {
+                    buttonHtml = `<button data-id="${item.id}" class="add-set-to-cart-btn w-full mt-auto bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-4 rounded-lg">セットをカートへ</button>`;
+                }
+                 else {
+                    buttonHtml = `<div class="flex items-center gap-2 mt-auto">
+                        <input type="number" value="1" min="1" max="${item.availableStock}" class="quantity-input w-16 text-center border rounded-md p-2" data-id="${item.id}">
+                        <button data-id="${item.id}" class="add-to-cart-btn flex-1 bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg">カートへ</button>
+                    </div>`;
+                }
+                
+                const stockText = item.category === '機材セット' ? 'セット' : `在庫: ${item.availableStock} / ${item.totalStock}`;
+
+                card.innerHTML = `
+                    <img src="${item.imageUrl || 'https://placehold.co/600x400/e2e8f0/64748b?text=N/A'}" alt="${item.name}" class="w-full h-36 object-cover">
+                    <div class="p-4 flex-grow flex flex-col">
+                        <h3 class="text-md font-bold">${item.name}</h3>
+                        <p class="text-sm text-gray-500 mb-2">${item.category}</p>
+                        <p class="text-sm font-semibold mt-auto pt-2 text-right">${stockText}</p>
+                    </div>
+                    <div class="p-4 pt-0">${buttonHtml}</div>
+                `;
+                listEl.appendChild(card);
+            });
+        }
+        
+        function displayCategoryTabs(items) {
+            const tabsEl = document.getElementById('category-tabs-container');
+            const currentActive = document.querySelector('#category-tabs-container .category-tab.bg-blue-500')?.dataset.category || 'すべて';
+            const categories = ['すべて', ...new Set(equipmentData.map(item => item.category))];
+            
+            tabsEl.innerHTML = `<div class="flex flex-wrap gap-2">${categories.map(cat => 
+                `<button class="category-tab px-3 py-1 text-sm font-medium rounded-md transition-colors ${cat === currentActive ? 'bg-blue-500 text-white' : 'bg-white text-gray-700 hover:bg-gray-100'}" data-category="${cat}">${cat}</button>`
+            ).join('')}</div>`;
+        }
+
+        // --- Cart Logic ---
+        function addToCart(id, quantity, isSetItem = false) {
+            const item = equipmentData.find(e => e.id === id);
+            if (!item) return;
+
+            if (cart[id]) {
+                cart[id].quantity += quantity;
+            } else {
+                cart[id] = { ...item, quantity };
+            }
+
+            if(!isSetItem) {
+                showMessage(`${item.name}を${quantity}点カートに追加しました`, 'info');
+            }
+            updateCartCount();
+        }
+
+        function addSetToCart(setId) {
+            const setItems = equipmentSets[setId];
+            if (!setItems) {
+                showMessage('セット情報が見つかりません。', 'error');
+                return;
+            }
+            setItems.forEach(item => {
+                addToCart(item.equipmentId, item.quantity, true);
+            });
+            const setName = equipmentData.find(e => e.id === setId)?.name || 'セット';
+            showMessage(`${setName}をカートに追加しました`, 'info');
+        }
+
+        function openCartModal() {
+            if (selectedDates.length === 0) {
+                showMessage('カートを開く前に日付を選択してください。', 'error');
+                return;
+            }
+            document.getElementById('cart-period-display').textContent = selectedDates.join(', ');
+            populateMemberSelectors();
+            displayCart();
+            document.getElementById('cart-modal').classList.remove('hidden');
+        }
+
+        function displayCart() {
+            const itemsEl = document.getElementById('cart-items');
+            itemsEl.innerHTML = '';
+            
+            if (Object.keys(cart).length === 0) {
+                itemsEl.innerHTML = '<p class="text-center text-gray-500">カートは空です。</p>';
+                document.getElementById('cart-submit-btn').disabled = true;
+                return;
+            }
+            document.getElementById('cart-submit-btn').disabled = false;
+            
+            const itemsByCategory = Object.values(cart).reduce((acc, item) => {
+                if (!acc[item.category]) acc[item.category] = [];
+                acc[item.category].push(item);
+                return acc;
+            }, {});
+
+            for (const category in itemsByCategory) {
+                const categoryEl = document.createElement('div');
+                categoryEl.className = 'mb-6';
+                categoryEl.innerHTML = `<h4 class="text-lg font-bold mb-3 border-b pb-2">${category}</h4>`;
+                
+                itemsByCategory[category].forEach(item => {
+                    const itemEl = document.createElement('div');
+                    itemEl.className = 'flex items-center justify-between bg-white p-3 rounded-md shadow-sm';
+                    itemEl.innerHTML = `
+                        <div class="flex items-center gap-4">
+                            <img src="${item.imageUrl || 'https://placehold.co/100x100'}" class="w-16 h-16 rounded-md object-cover">
+                            <div>
+                                <p class="font-semibold">${item.name}</p>
+                                <p class="text-sm text-gray-500">総在庫: ${item.totalStock}</p>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-4">
+                            <p class="font-semibold text-lg">${item.quantity} 点</p>
+                            <button data-id="${item.id}" class="remove-from-cart-btn text-red-500 hover:text-red-700 font-bold text-xl">&times;</button>
+                        </div>`;
+                    categoryEl.appendChild(itemEl);
+                });
+                itemsEl.appendChild(categoryEl);
+            }
+        }
+        
+        function removeFromCart(id) {
+            delete cart[id];
+            updateCartCount();
+            displayCart();
+        }
+
+        function updateCartCount() {
+            const count = Object.values(cart).reduce((sum, item) => sum + item.quantity, 0);
+            const cartCountEls = [document.getElementById('cart-count'), document.getElementById('mobile-cart-count')];
+            cartCountEls.forEach(el => el.textContent = count);
+        }
+
+        function populateMemberSelectors() {
+            const container = document.getElementById('members-container');
+            container.innerHTML = '<h5 class="text-md font-medium text-gray-700">担当メンバー</h5>';
+            const rolesToDisplay = ["Aカメ", "Bカメ", "カメアシ", "録音"];
+            
+            rolesToDisplay.forEach(role => {
+                 if (memberData[role]) {
+                    const selectEl = document.createElement('select');
+                    selectEl.dataset.role = role;
+                    selectEl.className = "member-selector mt-1 block w-full p-2 border rounded-md";
+                    let options = `<option value="">${role}を選択...</option>`;
+                    memberData[role].forEach(name => { options += `<option value="${name}">${name}</option>`; });
+                    selectEl.innerHTML = options;
+                    container.appendChild(selectEl);
+                }
+            });
+        }
+        
+        async function submitReservation() {
+            const teamName = document.getElementById('team-name').value;
+            if (!teamName || Object.keys(cart).length === 0) {
+                showMessage('チーム名を入力し、カートに機材を入れてください。', 'error'); return;
+            }
+            
+            const members = {};
+            document.querySelectorAll('.member-selector').forEach(sel => {
+                if (sel.value) members[sel.dataset.role] = sel.value;
+            });
+
+            showLoader(true);
+            try {
+                const dateRanges = [];
+                let currentRange = null;
+                for (const dateStr of selectedDates) {
+                    const currentDate = parseDateAsLocal(dateStr);
+                    if (currentRange) {
+                        const nextDay = parseDateAsLocal(currentRange.endDate);
+                        nextDay.setDate(nextDay.getDate() + 1);
+                        if (currentDate.getTime() === nextDay.getTime()) currentRange.endDate = dateStr;
+                        else {
+                            dateRanges.push(currentRange);
+                            currentRange = { startDate: dateStr, endDate: dateStr };
+                        }
+                    } else currentRange = { startDate: dateStr, endDate: dateStr };
+                }
+                if (currentRange) dateRanges.push(currentRange);
+
+                const values = [];
+                for (const range of dateRanges) {
+                    for (const item of Object.values(cart)) {
+                        const reservationId = `res_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+                        values.push([
+                            reservationId, teamName, item.id, item.name, item.quantity,
+                            range.startDate, range.endDate, '予約中', JSON.stringify(members)
+                        ]);
+                    }
+                }
+                
+                await gapi.client.sheets.spreadsheets.values.append({
+                    spreadsheetId: SPREADSHEET_ID, range: '予約リスト!A:I',
+                    valueInputOption: 'USER_ENTERED', resource: { values: values },
+                });
+                
+                showMessage('予約が確定しました！', 'success');
+                document.getElementById('cart-modal').classList.add('hidden');
+                cart = {};
+                selectedDates = [];
+                updateCartCount();
+                await loadAllData();
+            } catch (err) {
+                console.error('予約エラー:', err);
+                showMessage('予約の確定に失敗しました。', 'error');
+            } finally {
+                showLoader(false);
+            }
+        }
+        
+        // --- Status View ---
+        function renderStatusForDate() {
+            const listEl = document.getElementById('status-list');
+            listEl.innerHTML = '';
+            document.getElementById('status-datepicker').value = toYYYYMMDD(statusViewDate);
+
+            const reservationsOnDate = fullReservationData.filter(r => r.date === toYYYYMMDD(statusViewDate) && r.status === '予約中');
+            
+            if (reservationsOnDate.length === 0) {
+                listEl.innerHTML = `<p class="text-center text-gray-500 py-4">この日の予約はありません。</p>`;
+                return;
+            }
+            
+            const teams = [...new Set(reservationsOnDate.map(r => r.teamName))].sort();
+            
+            const container = document.createElement('div');
+            container.className = 'flex gap-6';
+
+            teams.forEach(team => {
+                const teamBlock = document.createElement('div');
+                teamBlock.className = 'flex-1 min-w-[250px]';
+                teamBlock.id = `team-block-${team.replace(/\s/g, '')}-${new Date().getTime()}`;
+
+                const reservationsForTeam = reservationsOnDate.filter(r => r.teamName === team);
+                let membersHtml = 'メンバー未登録';
+                const resWithMembers = reservationsForTeam.find(r => r.members && r.members !== '{}');
+                if (resWithMembers) {
+                    try {
+                        const membersObj = JSON.parse(resWithMembers.members);
+                        membersHtml = Object.entries(membersObj)
+                            .map(([role, name]) => `<div class="text-xs text-gray-500 font-normal whitespace-nowrap">${role}: ${name}</div>`)
+                            .join('');
+                    } catch (e) {}
+                }
+
+                teamBlock.innerHTML = `<div class="p-3 bg-gray-100 rounded-t-lg flex justify-between items-start">
+                    <div>
+                        <h3 class="font-bold text-lg">${team}</h3>
+                        ${membersHtml}
+                    </div>
+                    <button class="export-pdf-btn text-gray-500 hover:text-blue-600 p-1" data-team-block-id="${teamBlock.id}">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"></path></svg>
+                    </button>
+                </div>`;
+                
+                const equipmentList = document.createElement('div');
+                equipmentList.className = 'border border-gray-200 rounded-b-lg p-3 space-y-3';
+
+                const byCategory = reservationsForTeam.reduce((acc, r) => {
+                    const category = equipmentData.find(e => e.id === r.equipmentId)?.category || 'その他';
+                    if (!acc[category]) acc[category] = [];
+                    acc[category].push(r);
+                    return acc;
+                }, {});
+
+                for (const category in byCategory) {
+                    const categorySection = document.createElement('div');
+                    categorySection.innerHTML = `<h4 class="font-semibold text-sm text-gray-500">${category}</h4>`;
+                    const ul = document.createElement('ul');
+                    ul.className = 'list-disc list-inside text-sm space-y-1 pl-2';
+                    byCategory[category].forEach(r => {
+                        const li = document.createElement('li');
+                        li.textContent = `${r.equipmentName} (x${r.quantity})`;
+                        ul.appendChild(li);
+                    });
+                    categorySection.appendChild(ul);
+                    equipmentList.appendChild(categorySection);
+                }
+                teamBlock.appendChild(equipmentList);
+                container.appendChild(teamBlock);
+            });
+
+            listEl.appendChild(container);
+        }
+
+        // --- Management View ---
+        function displayReservationManagement() {
+            const listEl = document.getElementById('reservation-management-list');
+            listEl.innerHTML = '';
+            document.getElementById('management-datepicker').value = toYYYYMMDD(managementViewDate);
+            
+            const activeReservations = originalReservationData
+                .filter(r => r.status === '予約中' && toYYYYMMDD(managementViewDate) >= r.startDate && toYYYYMMDD(managementViewDate) <= r.endDate)
+                .sort((a, b) => parseDateAsLocal(a.startDate) - parseDateAsLocal(b.startDate));
+            
+            if (activeReservations.length === 0) {
+                listEl.innerHTML = '<div class="bg-white p-6 rounded-lg shadow-md"><p class="text-center text-gray-500">この日に有効な予約はありません。</p></div>';
+                return;
+            }
+
+            const byTeam = activeReservations.reduce((acc, r) => {
+                if (!acc[r.teamName]) acc[r.teamName] = [];
+                acc[r.teamName].push(r);
+                return acc;
+            }, {});
+
+            for (const team in byTeam) {
+                const teamEl = document.createElement('div');
+                teamEl.className = 'bg-white p-6 rounded-lg shadow-md mb-6';
+                
+                const teamReservations = byTeam[team];
+                
+                let membersHtml = 'メンバー未登録';
+                const resWithMembers = teamReservations.find(r => r.members && r.members !== '{}');
+                if (resWithMembers) {
+                     try {
+                        const membersObj = JSON.parse(resWithMembers.members);
+                        membersHtml = Object.entries(membersObj).map(([role, name]) => `<span class="text-sm text-gray-600 mr-4"><span class="font-semibold">${role}:</span> ${name}</span>`).join('');
+                    } catch(e) {}
+                }
+
+                const uniquePeriods = [...new Set(teamReservations.map(r => `${r.startDate} ~ ${r.endDate}`))].join(', ');
+                
+                teamEl.innerHTML = `<div class="flex justify-between items-start mb-4 border-b pb-4">
+                    <div>
+                        <h3 class="text-2xl font-bold">${team}</h3>
+                        <div class="mt-2 text-sm text-gray-500">
+                           <p><strong>期間:</strong> ${uniquePeriods}</p>
+                           <div class="mt-1"><strong>メンバー:</strong> ${membersHtml}</div>
+                        </div>
+                    </div>
+                    <button class="bulk-return-btn bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg" data-team-name="${team}">まとめて返却</button>
+                </div>`;
+                
+                const byCategory = teamReservations.reduce((acc, r) => {
+                    const category = equipmentData.find(e => e.id === r.equipmentId)?.category || 'その他';
+                    if(!acc[category]) acc[category] = [];
+                    acc[category].push(r);
+                    return acc;
+                }, {});
+
+                for(const category in byCategory) {
+                    const categorySection = document.createElement('div');
+                    categorySection.className = 'mb-4';
+                    categorySection.innerHTML = `<h4 class="text-lg font-semibold mb-2">${category}</h4>`;
+                    const table = document.createElement('table');
+                    table.className = "w-full text-left table-fixed";
+                    table.innerHTML = `
+                        <colgroup>
+                           <col style="width: 60%;">
+                           <col style="width: 20%;">
+                           <col style="width: 20%;">
+                        </colgroup>
+                        <thead>
+                            <tr class="text-gray-600 border-b">
+                                <th class="p-2">機材名</th>
+                                <th class="p-2">数量</th>
+                                <th class="p-2">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        ${byCategory[category].map(r => `
+                            <tr class="border-t">
+                                <td class="p-2">${r.equipmentName}</td>
+                                <td class="p-2">${r.quantity}</td>
+                                <td class="p-2">
+                                    <button class="return-btn bg-green-500 hover:bg-green-600 text-white text-xs font-bold py-1 px-3 rounded-md transition" data-row-num="${r.rowNum}">
+                                        返却済
+                                    </button>
+                                </td>
+                            </tr>`).join('')}
+                        </tbody>`;
+                    categorySection.appendChild(table);
+                    teamEl.appendChild(categorySection);
+                }
+                listEl.appendChild(teamEl);
+            }
+        }
+
+        async function handleReturn(rowNums) {
+            const isBulk = Array.isArray(rowNums);
+            const message = isBulk ? `${rowNums.length}件の予約をまとめて「返却済み」にしますか？` : "この予約を「返却済み」にしますか？";
+            if (!confirm(message)) return;
+            
+            showLoader(true);
+            try {
+                const data = (isBulk ? rowNums : [rowNums]).map(rowNum => ({
+                    range: `予約リスト!H${rowNum}`,
+                    values: [['返却済']]
+                }));
+
+                await gapi.client.sheets.spreadsheets.values.batchUpdate({
+                    spreadsheetId: SPREADSHEET_ID,
+                    resource: {
+                        valueInputOption: 'USER_ENTERED',
+                        data: data
+                    }
+                });
+                showMessage('ステータスを更新しました。', 'success');
+                await loadAllData(false);
+            } catch(err) {
+                console.error('返却処理エラー:', err);
+                showMessage('ステータスの更新に失敗しました。', 'error');
+            } finally {
+                showLoader(false);
+            }
+        }
+        
+        // --- Utilities & Event Listeners ---
+        async function exportTeamBlockAsPDF(elementId) {
+            const { jsPDF } = window.jspdf;
+            const element = document.getElementById(elementId);
+            if (!element) return;
+
+            showMessage('PDFを生成しています...', 'info');
+            showLoader(true);
+
+            try {
+                const canvas = await html2canvas(element, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+                const imgData = canvas.toDataURL('image/png');
+                
+                const pdf = new jsPDF({
+                    orientation: 'portrait',
+                    unit: 'px',
+                    format: 'a4'
+                });
+
+                const pdfWidth = pdf.internal.pageSize.getWidth();
+                const pdfHeight = pdf.internal.pageSize.getHeight();
+                const imgWidth = canvas.width;
+                const imgHeight = canvas.height;
+                const ratio = imgWidth / imgHeight;
+                
+                let finalImgWidth = pdfWidth;
+                let finalImgHeight = pdfWidth / ratio;
+                
+                if (finalImgHeight > pdfHeight) {
+                    finalImgHeight = pdfHeight;
+                    finalImgWidth = pdfHeight * ratio;
+                }
+                
+                const xPos = (pdfWidth - finalImgWidth) / 2;
+                const yPos = 0;
+
+                pdf.addImage(imgData, 'PNG', xPos, yPos, finalImgWidth, finalImgHeight);
+                
+                const teamName = element.querySelector('h3').textContent;
+                const date = document.getElementById('status-datepicker').value;
+                pdf.save(`${date}_${teamName}_ピックリスト.pdf`);
+
+            } catch (err) {
+                console.error('PDF export error:', err);
+                showMessage('PDFの書き出しに失敗しました。', 'error');
+            } finally {
+                showLoader(false);
+            }
+        }
+
+        function switchView(viewId) {
+            views.forEach(view => view.classList.toggle('active', view.id === viewId));
+            navButtons.forEach(btn => {
+                btn.classList.remove('text-blue-600', 'border-b-2', 'border-blue-600');
+                if (btn.id.includes(viewId.split('-')[0])) {
+                    btn.classList.add('text-blue-600', 'border-b-2', 'border-blue-600');
+                }
+            });
+             document.getElementById('mobile-menu').classList.add('hidden');
+        }
+        function showLoader(show) { loader.style.display = show ? 'flex' : 'none'; }
+        function showMessage(message, type = 'success') {
+            const box = document.getElementById('message-box');
+            box.textContent = message;
+            box.className = 'fixed top-20 right-5 text-white py-2 px-4 rounded-lg shadow-lg z-50';
+            box.classList.add(type === 'success' ? 'bg-green-500' : type === 'error' ? 'bg-red-500' : 'bg-blue-500');
+            box.style.display = 'block';
+            setTimeout(() => { box.style.display = 'none'; }, 3000);
+        }
+        
+        function toYYYYMMDD(date) {
+            const y = date.getFullYear();
+            const m = String(date.getMonth() + 1).padStart(2, '0');
+            const d = String(date.getDate()).padStart(2, '0');
+            return `${y}-${m}-${d}`;
+        }
+        
+        function parseDateAsLocal(dateString) {
+            const [year, month, day] = dateString.split('-').map(Number);
+            return new Date(year, month - 1, day);
+        }
+
+        // --- Auth & Nav ---
+        document.getElementById('authorize_button').addEventListener('click', handleAuthClick);
+        document.getElementById('signout_button').addEventListener('click', handleSignoutClick);
+        document.getElementById('mobile-authorize_button').addEventListener('click', handleAuthClick);
+        document.getElementById('mobile-signout_button').addEventListener('click', handleSignoutClick);
+        
+        navButtons.forEach(btn => btn.addEventListener('click', () => {
+            if(btn.id !== 'nav-cart') switchView(btn.id.replace('nav-', '') + '-view');
+        }));
+
+        document.getElementById('refresh-data-btn').addEventListener('click', () => {
+            showMessage('データを更新しています...', 'info');
+            loadAllData(false);
+        });
+        document.getElementById('mobile-refresh-data-btn').addEventListener('click', (e) => {
+            e.preventDefault();
+            showMessage('データを更新しています...', 'info');
+            loadAllData(false);
+            document.getElementById('mobile-menu').classList.add('hidden');
+        });
+        
+        // --- Mobile Nav ---
+        document.getElementById('hamburger-btn').addEventListener('click', () => {
+            document.getElementById('mobile-menu').classList.toggle('hidden');
+        });
+        document.querySelectorAll('.mobile-nav-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                if(btn.id !== 'mobile-refresh-data-btn') {
+                    switchView(btn.id.replace('mobile-nav-', '') + '-view');
+                }
+            });
+        });
+        document.getElementById('mobile-cart-btn').addEventListener('click', openCartModal);
+
+
+        // --- Booking View ---
+        document.getElementById('calendar-grid').addEventListener('click', handleDayClick);
+        document.getElementById('calendar-prev').addEventListener('click', () => {
+            calendarDate.setMonth(calendarDate.getMonth() - 1);
+            renderCalendar(calendarDate.getFullYear(), calendarDate.getMonth());
+        });
+        document.getElementById('calendar-next').addEventListener('click', () => {
+            calendarDate.setMonth(calendarDate.getMonth() + 1);
+            renderCalendar(calendarDate.getFullYear(), calendarDate.getMonth());
+        });
+        document.getElementById('category-tabs-container').addEventListener('click', e => {
+            if (e.target.classList.contains('category-tab')) {
+                document.querySelectorAll('#category-tabs-container .category-tab').forEach(tab => {
+                    tab.classList.remove('bg-blue-500', 'text-white');
+                    tab.classList.add('bg-white', 'text-gray-700');
+                });
+                e.target.classList.add('bg-blue-500', 'text-white');
+                e.target.classList.remove('bg-white', 'text-gray-700');
+                displayAvailableEquipment();
+            }
+        });
+        document.getElementById('available-list').addEventListener('click', e => {
+            const btn = e.target.closest('.add-to-cart-btn, .add-set-to-cart-btn');
+            if (btn) {
+                const id = btn.dataset.id;
+                if(btn.classList.contains('add-set-to-cart-btn')) {
+                    addSetToCart(id);
+                } else {
+                    const quantity = parseInt(document.querySelector(`.quantity-input[data-id="${id}"]`).value, 10);
+                    addToCart(id, quantity);
+                }
+            }
+        });
+
+        // --- Cart ---
+        document.getElementById('nav-cart').addEventListener('click', openCartModal);
+        document.getElementById('cart-close-btn').addEventListener('click', () => document.getElementById('cart-modal').classList.add('hidden'));
+        document.getElementById('cart-submit-btn').addEventListener('click', submitReservation);
+        document.getElementById('cart-items').addEventListener('click', e => {
+            const btn = e.target.closest('.remove-from-cart-btn');
+            if (btn) removeFromCart(btn.dataset.id);
+        });
+
+        // --- Status View ---
+        const statusPicker = document.getElementById('status-datepicker');
+        statusPicker.addEventListener('change', () => {
+            statusViewDate = parseDateAsLocal(statusPicker.value);
+            renderStatusForDate();
+        });
+        document.getElementById('status-prev').addEventListener('click', () => {
+            statusViewDate.setDate(statusViewDate.getDate() - 1);
+            renderStatusForDate();
+        });
+        document.getElementById('status-next').addEventListener('click', () => {
+            statusViewDate.setDate(statusViewDate.getDate() + 1);
+            renderStatusForDate();
+        });
+        document.getElementById('status-list').addEventListener('click', e => {
+            const btn = e.target.closest('.export-pdf-btn');
+            if(btn) {
+                const blockId = btn.dataset.teamBlockId;
+                exportTeamBlockAsPDF(blockId);
+            }
+        });
+
+        // --- Management View ---
+         const mgmtPicker = document.getElementById('management-datepicker');
+        mgmtPicker.addEventListener('change', () => {
+            managementViewDate = parseDateAsLocal(mgmtPicker.value);
+            displayReservationManagement();
+        });
+        document.getElementById('management-prev').addEventListener('click', () => {
+            managementViewDate.setDate(managementViewDate.getDate() - 1);
+            displayReservationManagement();
+        });
+        document.getElementById('management-next').addEventListener('click', () => {
+            managementViewDate.setDate(managementViewDate.getDate() + 1);
+            displayReservationManagement();
+        });
+        
+        document.getElementById('reservation-management-list').addEventListener('click', e => {
+            const returnBtn = e.target.closest('.return-btn');
+            if (returnBtn) {
+                handleReturn([returnBtn.dataset.rowNum]);
+                return;
+            }
+            const bulkReturnBtn = e.target.closest('.bulk-return-btn');
+            if (bulkReturnBtn) {
+                const teamName = bulkReturnBtn.dataset.teamName;
+                const rowNums = originalReservationData
+                    .filter(r => r.teamName === teamName && r.status === '予約中' && toYYYYMMDD(managementViewDate) >= r.startDate && toYYYYMMDD(managementViewDate) <= r.endDate)
+                    .map(r => r.rowNum);
+                if (rowNums.length > 0) handleReturn(rowNums);
+                else showMessage('この日の返却対象予約がありません', 'info');
+            }
+        });
+
+        // --- Script Loading ---
+        const gapiScript = document.createElement('script');
+        gapiScript.src = 'https://apis.google.com/js/api.js';
+        gapiScript.async = true; gapiScript.defer = true; gapiScript.onload = gapiLoaded;
+        document.body.appendChild(gapiScript);
+
+        const gisScript = document.createElement('script');
+        gisScript.src = 'https://accounts.google.com/gsi/client';
+        gisScript.async = true; gisScript.defer = true; gisScript.onload = gisLoaded;
+        document.body.appendChild(gisScript);
+    });
+    </script>
+</body>
+</html>
+
